@@ -31,7 +31,7 @@ class PythranMagics(Magics):
 
     def _import_all(self, module):
         """ Import only globals modules. """
-        for k, v in module.__dict__.items():
+        for k, v in list(module.__dict__.items()):
             if not k.startswith('__'):
                 self.shell.push({k: v})
 

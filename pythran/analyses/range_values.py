@@ -1,7 +1,7 @@
 """ Module Analysing code to extract positive subscripts from code.  """
 # TODO check bound of while and if for more occurate values.
 
-import ast
+import gast as ast
 import copy
 
 from pythran.analyses import Globals, Aliases
@@ -39,7 +39,7 @@ class RangeValues(FunctionAnalysis):
     def visit_FunctionDef(self, node):
         """ Set default range value for globals and attributs.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse("def foo(a, b): pass")
         >>> pm = passmanager.PassManager("test")
@@ -52,7 +52,7 @@ class RangeValues(FunctionAnalysis):
         for attr in node.args.args:
             self.result[attr.id] = UNKNOWN_RANGE
 
-        map(self.visit, node.body)
+        list(map(self.visit, node.body))
 
     def visit_Assign(self, node):
         """
@@ -60,7 +60,7 @@ class RangeValues(FunctionAnalysis):
 
         We do not handle container values.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse("def foo(): a = b = 2")
         >>> pm = passmanager.PassManager("test")
@@ -79,7 +79,7 @@ class RangeValues(FunctionAnalysis):
     def visit_AugAssign(self, node):
         """ Update range value for augassigned variables.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse("def foo(): a = 2; a -= 1")
         >>> pm = passmanager.PassManager("test")
@@ -96,7 +96,7 @@ class RangeValues(FunctionAnalysis):
     def visit_For(self, node):
         """ Handle iterate variable in for loops.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -118,8 +118,8 @@ class RangeValues(FunctionAnalysis):
             for alias in self.aliases[node.iter.func]:
                 if isinstance(alias, Intrinsic):
                     self.add(node.target.id,
-                             alias.return_range_content(map(self.visit,
-                                                            node.iter.args)))
+                             alias.return_range_content(
+                                 [self.visit(n) for n in node.iter.args]))
                 else:
                     self.add(node.target.id, UNKNOWN_RANGE)
         else:
@@ -130,7 +130,7 @@ class RangeValues(FunctionAnalysis):
     def visit_loop(self, node):
         """ Handle incremented variables in loop body.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -148,10 +148,10 @@ class RangeValues(FunctionAnalysis):
         Range(low=2, high=2)
         """
         old_range = copy.deepcopy(self.result)
-        map(self.visit, node.body)
-        for name, range_ in old_range.iteritems():
+        list(map(self.visit, node.body))
+        for name, range_ in old_range.items():
             self.result[name].widen(range_)
-        map(self.visit, node.orelse)
+        list(map(self.visit, node.orelse))
 
     visit_While = visit_loop
 
@@ -160,7 +160,7 @@ class RangeValues(FunctionAnalysis):
 
         TODO : We could exclude some operand with this range information...
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -172,13 +172,13 @@ class RangeValues(FunctionAnalysis):
         >>> res['d']
         Range(low=2, high=3)
         """
-        res = zip(*map(self.visit, node.values))
+        res = list(zip(*list(map(self.visit, node.values))))
         return Range(min(res[0]), max(res[1]))
 
     def visit_BinOp(self, node):
         """ Combine operands ranges for given operator.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -195,7 +195,7 @@ class RangeValues(FunctionAnalysis):
     def visit_UnaryOp(self, node):
         """ Update range with given unary operation.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -232,7 +232,7 @@ class RangeValues(FunctionAnalysis):
     def visit_IfExp(self, node):
         """ Use worst case for both possible values.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -254,7 +254,7 @@ class RangeValues(FunctionAnalysis):
     def visit_Compare(_):
         """ Boolean are possible index.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -271,7 +271,7 @@ class RangeValues(FunctionAnalysis):
     def visit_Call(self, node):
         """ Function calls are not handled for now.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -284,7 +284,8 @@ class RangeValues(FunctionAnalysis):
         result = None
         for alias in self.aliases[node.func]:
             if isinstance(alias, Intrinsic):
-                alias_range = alias.return_range(map(self.visit, node.args))
+                alias_range = alias.return_range(
+                    [self.visit(n) for n in node.args])
                 result = result.update(alias_range) if result else alias_range
             else:
                 return UNKNOWN_RANGE
@@ -305,7 +306,7 @@ class RangeValues(FunctionAnalysis):
     def visit_ExceptHandler(self, node):
         """ Add a range value for exception variable.
 
-        >>> import ast
+        >>> import gast as ast
         >>> from pythran import passmanager, backend
         >>> node = ast.parse('''
         ... def foo():
@@ -320,7 +321,7 @@ class RangeValues(FunctionAnalysis):
         """
         if node.name:
             self.result[node.name.id] = UNKNOWN_RANGE
-        map(self.visit, node.body)
+        list(map(self.visit, node.body))
 
     def generic_visit(self, node):
         """ Other nodes are not known and range value neither. """

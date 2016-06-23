@@ -1,6 +1,7 @@
 import unittest
 from test_env import TestEnv
 import numpy
+import sys
 
 
 @TestEnv.module
@@ -574,11 +575,12 @@ def np_rosen_der(x):
     def test_tolist2(self):
         self.run_test("def np_tolist2(a): return a.tolist()", numpy.arange(2*3*4*5).reshape(2,3,4,5), np_tolist2=[numpy.array([[[[int]]]])])
 
-    def test_tostring0(self):
-        self.run_test("def np_tostring0(a): return a.tostring()", numpy.arange(80, 100), np_tostring0=[numpy.array([int])])
+    if sys.version_info.major == 2:
+        def test_tostring0(self):
+            self.run_test("def np_tostring0(a): return a.tostring()", numpy.arange(80, 100), np_tostring0=[numpy.array([int])])
 
-    def test_tostring1(self):
-        self.run_test("def np_tostring1(a): return a.tostring()", numpy.arange(500, 600), np_tostring1=[numpy.array([int])])
+        def test_tostring1(self):
+            self.run_test("def np_tostring1(a): return a.tostring()", numpy.arange(500, 600), np_tostring1=[numpy.array([int])])
 
     def test_fromiter0(self):
         self.run_test("def g(): yield 1 ; yield 2\ndef np_fromiter0(): from numpy import fromiter, float32 ; iterable = g() ; return fromiter(iterable, float32)", np_fromiter0=[])

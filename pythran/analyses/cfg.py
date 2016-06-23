@@ -2,7 +2,7 @@
 
 from pythran.passmanager import FunctionAnalysis
 
-import ast
+import gast as ast
 import networkx as nx
 
 
@@ -116,7 +116,7 @@ class CFG(FunctionAnalysis):
         """OUT = RAISES = (node)"""
         return (node,), (node,)
 
-    def visit_TryExcept(self, node):
+    def visit_Try(self, node):
         """
         OUT = body's U handler's
         RAISES = handler's

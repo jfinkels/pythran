@@ -65,11 +65,13 @@ def make_extension(**extra):
     }
 
     extension['define_macros'].append('ENABLE_PYTHON_MODULE')
+    extension['define_macros'].append(
+        '__PYTHRAN__={}'.format(sys.version_info.major))
 
     here = os.path.dirname(os.path.dirname(__file__)) or '.'
     # using / as separator as advised in the distutils doc
     extension["include_dirs"].append(here + '/pythran')
-    for k, w in extra.items():
+    for k, w in list(extra.items()):
         extension[k].extend(w)
     extension["define_macros"] = [parse_define(dm) for dm in
                                   extension["define_macros"]]
@@ -157,7 +159,7 @@ def run():
                       distutils.sysconfig.get_config_var('VERSION'))
 
     if output:
-        print(' '.join(output))
+        print((' '.join(output)))
 
 if __name__ == '__main__':
     run()

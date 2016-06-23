@@ -26,10 +26,12 @@ Generator for C/C++.
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-
 from __future__ import division
+
+
 from textwrap import dedent
 from pythran.tables import pythran_ward
+import networkx as nx
 
 __copyright__ = "Copyright (C) 2008 Andreas Kloeckner"
 
@@ -111,7 +113,7 @@ class DeclSpecifier(NestedDeclarator):
         def add_spec(sub_it):
             it = iter(sub_it)
             try:
-                yield "%s%s%s" % (self.spec, self.sep, it.next())
+                yield "%s%s%s" % (self.spec, self.sep, next(it))
             except StopIteration:
                 pass
 
@@ -494,6 +496,49 @@ class PythonModule(object):
         moduledoc = self.docstring(self.docstrings.get(None, ""))
         self.metadata['moduledoc'] = moduledoc
 
+        self._init_catches()
+
+    def _init_catches(self):
+        '''
+        Initialize the catch handler used by all pythran-generated functions
+        '''
+        # topologically sorted exceptions based on the inheritance hierarchy.
+        # needed because otherwise boost python register_exception handlers
+        # do not catch exception type in the right way
+        # (first valid exception is selected)
+        # Inheritance has to be taken into account in the registration order.
+        exceptions = nx.DiGraph()
+        for function_name, v in self.functions.items():
+            for mname, symbol in v:
+                if isinstance(symbol, ConstExceptionIntr):
+                    exceptions.add_node(
+                        getattr(sys.modules[".".join(mname)], function_name))
+
+        # add edges based on class relationships
+        for n in exceptions:
+            if n.__base__ in exceptions:
+                exceptions.add_edge(n.__base__, n)
+
+        sorted_exceptions = nx.topological_sort(exceptions)
+
+        self.catches = ['''
+            #ifdef PYTHONIC_BUILTIN_{uname}_HPP
+                catch(pythonic::types::{name} & e) {{
+                    PyErr_SetString(PyExc_{name},
+                        pythonic::__builtin__::functor::str{{}}(e.args).c_str());
+                }}
+            #endif
+                '''.format(name=n.__name__,
+                           uname=n.__name__.upper())
+                        for n in sorted_exceptions]
+
+        self.catches.append('''
+            catch(...) {
+                PyErr_SetString(PyExc_RuntimeError,
+                    "Something happened on the way to heaven"
+                );
+            }''')
+
     def docstring(self, doc):
         return '"%s"' % (dedent(doc).replace('"', '\\"')
                                     .replace('\n', '\\n')
@@ -580,7 +625,7 @@ class PythonModule(object):
             theextraobjects.append(
                 'PyModule_AddObject(theModule, "{0}", {0});'.format(vname))
 
-        for fname, overloads in self.functions.items():
+        for fname, overloads in list(self.functions.items()):
             tryall = []
             candidates = []
             for overload, types in overloads:
@@ -692,7 +737,7 @@ class PythonModule(object):
         body = (self.preamble +
                 self.includes +
                 self.implems +
-                map(Line, self.wrappers + theoverloads) +
+                list(map(Line, self.wrappers + theoverloads)) +
                 [Line(methods), Line(module)])
 
         return Module(body)

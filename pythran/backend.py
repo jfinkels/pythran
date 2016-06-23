@@ -26,20 +26,21 @@ from pythran.utils import attr_to_path
 from pythran import metadata, unparse
 
 from math import isnan, isinf
-import ast
+import gast as ast
 import os
 import sys
-if sys.version_info[0] < 3:
-    import cStringIO
+from functools import reduce
+if sys.version_info.major == 2:
+    import StringIO as io
 else:
-    from io import StringIO as cStringIO
+    import io
 
 
 class Python(Backend):
     '''
     Produces a Python representation of the AST.
 
-    >>> import ast, passmanager
+    >>> import gast as ast, passmanager
     >>> node = ast.parse("print('hello world')")
     >>> pm = passmanager.PassManager('test')
     >>> print(pm.dump(Python, node))
@@ -51,7 +52,7 @@ class Python(Backend):
         super(Python, self).__init__()
 
     def visit(self, node):
-        output = cStringIO.StringIO()
+        output = io.StringIO()
         unparse.Unparser(node, output)
         self.result = output.getvalue()
 
@@ -116,7 +117,7 @@ def cxx_loop(fun):
 
         # handle the body of the for loop
         if break_handler:
-            orelse = map(self.visit, node.orelse)
+            orelse = list(map(self.visit, node.orelse))
             orelse_label = Statement("{0}:".format(break_handler))
             return Block([res] + orelse + [orelse_label])
         else:
@@ -139,7 +140,7 @@ class Cxx(Backend):
         no jump are requiered.
         (else in loop means : don't execute if loop is terminated with a break)
 
-    >>> import ast, passmanager, os
+    >>> import gast as ast, passmanager, os
     >>> node = ast.parse("def foo(): print('hello world')")
     >>> pm = passmanager.PassManager('test')
     >>> r = pm.dump(Cxx, node)
@@ -196,7 +197,7 @@ pythonic::types::none_type>::type result_type;
         headers += [Include(os.path.join("pythonic", *t) + ".hpp")
                     for t in self.dependencies]
 
-        body = map(self.visit, node.body)
+        body = list(map(self.visit, node.body))
 
         nsbody = body + self.declarations + self.definitions
         ns = Namespace(pythran_ward + self.passmanager.module_name, nsbody)
@@ -232,7 +233,7 @@ pythonic::types::none_type>::type result_type;
         if omp_directives:
             directives = list()
             for directive in reversed(omp_directives):
-                directive.deps = map(self.visit, directive.deps)
+                directive.deps = list(map(self.visit, directive.deps))
                 directives.append(directive)
             if index is None:
                 stmt = AnnotatedStatement(stmt, directives)
@@ -280,7 +281,7 @@ pythonic::types::none_type>::type result_type;
                     "__type{0}".format(self.mapping[node]))
 
             def typedefs(self):
-                l = sorted(self.mapping.items(), key=lambda x: x[1])
+                l = sorted(list(self.mapping.items()), key=lambda x: x[1])
                 L = list()
                 visited = set()  # the same value must not be typedefed twice
                 for k, v in l:
@@ -296,7 +297,7 @@ pythonic::types::none_type>::type result_type;
         fargs = node.args.args
 
         formal_args = [arg.id for arg in fargs]
-        formal_types = ["argument_type" + str(i) for i in xrange(len(fargs))]
+        formal_types = ["argument_type" + str(i) for i in range(len(fargs))]
 
         self.ldecls = set(self.passmanager.gather(LocalNodeDeclarations, node))
 
@@ -307,14 +308,14 @@ pythonic::types::none_type>::type result_type;
         self.lctx = CachedTypeVisitor()
 
         # choose one node among all the ones with the same name for each name
-        self.ldecls = set({n.id: n for n in self.ldecls}.itervalues())
+        self.ldecls = set({n.id: n for n in self.ldecls}.values())
 
         # 0 is used as initial_state, thus the +1
         self.yields = {k: (1 + v, "yield_point{0}".format(1 + v)) for (v, k) in
                        enumerate(self.passmanager.gather(YieldPoints, node))}
 
         # gather body dump
-        operator_body = map(self.visit, node.body)
+        operator_body = list(map(self.visit, node.body))
 
         # compute arg dump
         default_arg_values = (
@@ -390,7 +391,7 @@ pythonic::types::none_type>::type result_type;
                                               formal_args, default_arg_values),
                     Line(": {0} {{ }}".format(
                         ", ".join(["pythonic::yielder()"] +
-                                  map("{0}({0})".format, formal_args))))
+                                  list(map("{0}({0})".format, formal_args)))))
                     ))
 
             next_iterator = [
@@ -441,7 +442,7 @@ pythonic::types::none_type>::type result_type;
                 Cxx.generator_state_holder,
                 " ".join("case {0}: goto {1};".format(num, where)
                          for (num, where) in sorted(
-                             self.yields.itervalues(),
+                             iter(self.yields.values()),
                              key=lambda x: x[0])))))
 
             ctx = CachedTypeVisitor(self.lctx)
@@ -881,7 +882,7 @@ pythonic::types::none_type>::type result_type;
                 # Eventually add local_iter in a shared clause as iterable is
                 # shared in the for loop (for every clause with datasharing)
                 directive.s += ' shared({})'
-                directive.deps.append(ast.Name(local_iter, ast.Load()))
+                directive.deps.append(ast.Name(local_iter, ast.Load(), None))
 
             target = node.target
             assert isinstance(target, ast.Name)
@@ -894,7 +895,7 @@ pythonic::types::none_type>::type result_type;
                 # Target is private by default in omp but iterator use may
                 # introduce an extra variable
                 directive.s += ' private({})'
-                directive.deps.append(ast.Name(target.id, ast.Load()))
+                directive.deps.append(ast.Name(target.id, ast.Load(), None))
 
     def can_use_autofor(self, node):
         """
@@ -927,10 +928,10 @@ pythonic::types::none_type>::type result_type;
         """
         assert isinstance(node.target, ast.Name)
         pattern = ast.Call(func=ast.Attribute(value=ast.Name(id='__builtin__',
-                                                             ctx=ast.Load()),
+                                                             ctx=ast.Load(),
+                                                             annotation=None),
                                               attr='xrange', ctx=ast.Load()),
-                           args=AST_any(), keywords=[], starargs=None,
-                           kwargs=None)
+                           args=AST_any(), keywords=[])
         is_assigned = {node.target.id: False}
         [is_assigned.update(self.passmanager.gather(IsAssigned, stmt))
          for stmt in node.body]
@@ -980,7 +981,7 @@ pythonic::types::none_type>::type result_type;
         target = self.visit(node.target)
 
         # Handle the body of the for loop
-        loop_body = Block(map(self.visit, node.body))
+        loop_body = Block(list(map(self.visit, node.body)))
 
         # Declare local variables at the top of the loop body
         loop_body = self.process_locals(node, loop_body, node.target.id)
@@ -1038,7 +1039,7 @@ pythonic::types::none_type>::type result_type;
         stmt = While(test, Block(body))
         return self.process_omp_attachements(node, stmt)
 
-    def visit_TryExcept(self, node):
+    def visit_Try(self, node):
         body = [self.visit(n) for n in node.body]
         except_ = list()
         [except_.extend(self.visit(n)) for n in node.handlers]
@@ -1068,22 +1069,12 @@ pythonic::types::none_type>::type result_type;
                                    self.process_omp_attachements(node, stmt))
 
     def visit_Raise(self, node):
-        type_ = node.type and self.visit(node.type)
-        if node.inst:
-            if isinstance(node.inst, ast.Tuple):
-                inst = ['"{0}"'.format(e.s) for e in node.inst.elts]
-            else:
-                inst = [node.inst.s]
-        else:
-            inst = None
-        if inst:
-            return Statement("throw {0}({1})".format(type_, ", ".join(inst)))
-        else:
-            return Statement("throw {0}".format(type_ or ""))
+        exc = node.exc and self.visit(node.exc)
+        return Statement("throw {0}".format(exc or ""))
 
     def visit_Assert(self, node):
         params = [self.visit(node.test), node.msg and self.visit(node.msg)]
-        sparams = ", ".join(map(strip_exp, filter(None, params)))
+        sparams = ", ".join(map(strip_exp, [_f for _f in params if _f]))
         return Statement("pythonic::pythran_assert({0})".format(sparams))
 
     def visit_Import(self, _):
@@ -1189,14 +1180,14 @@ pythonic::types::none_type>::type result_type;
                           for k, v in zip(keys, values)))
 
     def visit_Tuple(self, node):
-        elts = map(self.visit, node.elts or ())
+        elts = list(map(self.visit, node.elts or ()))
         return "pythonic::types::make_tuple({0})".format(", ".join(elts))
 
     def visit_Compare(self, node):
         left = self.visit(node.left)
         ops = [operator_to_lambda[type(n)] for n in node.ops]
         comparators = [self.visit(n) for n in node.comparators]
-        all_compare = zip(ops, comparators)
+        all_compare = list(zip(ops, comparators))
         op, right = all_compare[0]
         output = [op(left, right)]
         left = right
@@ -1285,7 +1276,7 @@ pythonic::types::none_type>::type result_type;
 
     # other
     def visit_ExtSlice(self, node):
-        return map(self.visit, node.dims)
+        return list(map(self.visit, node.dims))
 
     def visit_Slice(self, node):
         args = []

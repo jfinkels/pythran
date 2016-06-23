@@ -15,4 +15,4 @@ class Globals(ModuleAnalysis):
     def run(self, node, ctx):
         super(Globals, self).run(node, ctx)
         return {'__builtin__',
-                '__dispatch__'}.union(self.global_declarations.keys())
+                '__dispatch__'}.union(list(self.global_declarations.keys()))
